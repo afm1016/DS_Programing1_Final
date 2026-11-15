@@ -1,4 +1,3 @@
-
 import requests
 import sqlite3
 import time
@@ -20,16 +19,32 @@ def convert_stars(text):
 url = "https://github.com/orgs/google/repositories"
 records = []
 
-# 2ページ分スクレイピング
-for page in range(1, 3):
+# スクレイピング
+page = 1
+
+while True:
     if page > 1:
         time.sleep(1)
 
     print(f"{page}ページ目を取得中...", flush=True)
 
-    response = requests.get(
-        url, params={"page": page}, timeout=15
-    )
+    for attempt in range(3):
+        response = requests.get(
+            url, params={"page": page}, timeout=15
+        )
+
+        if response.status_code != 429:
+            break
+
+        if attempt == 2:
+            raise RuntimeError("アクセス制限が続いているため中断します")
+
+        retry_after = response.headers.get("Retry-After")
+        wait = int(retry_after) if retry_after and retry_after.isdigit() else 60 * (attempt + 1)
+
+        print(f"アクセス制限：{wait}秒待機して再試行します", flush=True)
+        time.sleep(wait)
+
     response.raise_for_status()
 
     soup = BeautifulSoup(response.text, "html.parser")
@@ -66,6 +81,11 @@ for page in range(1, 3):
 
     print(f"{page}ページ目: {count}件取得完了", flush=True)
 
+    if count == 0:
+        print("取得できるリポジトリがなくなりました", flush=True)
+        break
+
+    page += 1
 
 # データベースに接続
 conn = sqlite3.connect("repositories.db")
